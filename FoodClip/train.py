@@ -35,7 +35,9 @@ def custom_collate_fn(batch):
         'image_true': default_collate(images_true),
         'image_false': default_collate(images_false),
         'text_true': {'input_ids': text_true_input_ids, 'attention_mask': text_true_attention_mask},
-        'text_false': {'input_ids': text_false_input_ids, 'attention_mask': text_false_attention_mask}
+        'text_false': {'input_ids': text_false_input_ids, 'attention_mask': text_false_attention_mask},
+        'image_path': [item['image_path'] for item in batch],
+        'text_clear': [item['text_clear'] for item in batch]
     }
 
     return batch
@@ -92,7 +94,7 @@ class FoodClipDataset(Dataset):
         text_input_true = self.tokenizer(text_true, return_tensors="pt", padding=True, truncation=True, max_length=512)
         text_input_false = self.tokenizer(text_false, return_tensors="pt", padding=True, truncation=True, max_length=512)
 
-        return {'image_true': image_true, 'image_false':image_false, 'text_true': text_input_true, 'text_false': text_input_false}
+        return {'image_true': image_true, 'image_false':image_false, 'text_true': text_input_true, 'text_false': text_input_false, "image_path": image_path_true, "text_clear": text_true}
 
 
 # Create an instance of your custom dataset
@@ -148,6 +150,7 @@ def train(model, train_dataloader, val_dataloader, epochs=5):
     writer = SummaryWriter()
 
     for epoch in range(epochs):
+        
         model.train()
         train_loss = 0.0
         for batch in tqdm(train_dataloader, desc=f"Epoch {epoch+1}/{epochs}"):
@@ -201,11 +204,23 @@ def train(model, train_dataloader, val_dataloader, epochs=5):
                 val_loss += loss.item()
         
         # Logging the validation loss
+        model_save_counter_validation_loss_change= 0
         average_val_loss = val_loss / len(val_dataloader)
+        previous_val_loss = 999999
         writer.add_scalars('Loss', {
             'Training': average_train_loss,
             'Validation': average_val_loss
         }, epoch)
+        if average_val_loss > previous_val_loss:
+            model_save_counter_validation_loss_change += 1
+            if model_save_counter_validation_loss_change > 3:
+                print(f"Validation loss has not improved for 3 epochs. Early stopping...")
+                break
+        else:
+            model_save_counter_validation_loss_change = 0
+            torch.save(model.state_dict(), f"models/model_FoodClip.pth")
+
+        previous_val_loss = average_val_loss
 
     writer.close()
 
@@ -213,4 +228,4 @@ def train(model, train_dataloader, val_dataloader, epochs=5):
 if __name__ == "__main__":
     model = FoodClip()
     train_dataloader, val_dataloader, test_dataloader = create_train_val_test_with_Data_Loader()
-    train(model, train_dataloader, val_dataloader, epochs=80)
+    train(model, train_dataloader, val_dataloader, epochs=30)
